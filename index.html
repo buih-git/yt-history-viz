@@ -61,6 +61,32 @@
   .sub a { color: var(--accent2); text-decoration: none; }
   .sub a:hover { text-decoration: underline; }
 
+  .tz-wrap {
+    width: 100%;
+    max-width: 480px;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: 10px;
+    padding: 10px 14px;
+  }
+  .tz-wrap label { font-size: 12px; color: var(--muted); font-family: var(--mono); white-space: nowrap; }
+  .tz-wrap select {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    cursor: pointer;
+    outline: none;
+    min-width: 0;
+  }
+  .tz-wrap select option { background: #1f1f1f; }
+
   #drop-zone {
     width: 100%;
     max-width: 480px;
@@ -229,6 +255,12 @@
     Need the file? Go to <a href="https://takeout.google.com" target="_blank">takeout.google.com</a> → select YouTube → export → find <code>watch-history.json</code>.
   </p>
 
+
+  <div class="tz-wrap">
+    <label for="tz-select">Timezone</label>
+    <select id="tz-select"></select>
+  </div>
+
   <div id="drop-zone">
     <input type="file" accept=".json" id="file-input">
     <div class="drop-icon">
@@ -295,6 +327,41 @@
 <script>
 const $ = id => document.getElementById(id);
 
+// ── Timezone selector ──
+const TIMEZONES = [
+  'Pacific/Honolulu','America/Anchorage','America/Los_Angeles','America/Denver',
+  'America/Chicago','America/New_York','America/Sao_Paulo','Atlantic/Azores',
+  'Europe/London','Europe/Berlin','Europe/Paris','Europe/Zurich','Europe/Helsinki',
+  'Africa/Johannesburg','Asia/Dubai','Asia/Kolkata','Asia/Bangkok','Asia/Shanghai',
+  'Asia/Tokyo','Asia/Seoul','Australia/Sydney','Pacific/Auckland'
+];
+const tzSel = $('tz-select');
+const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+TIMEZONES.forEach(tz => {
+  const opt = document.createElement('option');
+  opt.value = tz;
+  opt.textContent = tz.replace('_',' ');
+  if (tz === userTz || tz.endsWith('/' + userTz.split('/').pop())) opt.selected = true;
+  tzSel.appendChild(opt);
+});
+// fallback if user tz not in list
+if (!tzSel.value) tzSel.options[0].selected = true;
+
+function localParts(isoStr, tz) {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(new Date(isoStr)).map(p => [p.type, p.value]));
+  return {
+    day: `${parts.year}-${parts.month}-${parts.day}`,
+    month: `${parts.year}-${parts.month}`,
+    hour: parseInt(parts.hour) % 24,
+    weekday: new Date(`${parts.year}-${parts.month}-${parts.day}T12:00:00`).getDay()
+  };
+}
+
 // ── Drag & drop ──
 const zone = $('drop-zone');
 zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
@@ -332,19 +399,16 @@ function destroyCharts() { charts.forEach(c => c.destroy()); charts = []; }
 function renderDashboard(data) {
   destroyCharts();
 
+  const tz = tzSel.value;
   const byDay = {}, byHour = {}, byWeekday = {}, byMonth = {};
   const channels = {};
 
   for (const d of data) {
-    const t = new Date(d.time);
-    const day = t.toISOString().slice(0,10);
-    const hour = t.getUTCHours();
-    const wd = t.getUTCDay(); // 0=Sun
-    const month = t.toISOString().slice(0,7);
+    const { day, month, hour, weekday } = localParts(d.time, tz);
 
     byDay[day] = (byDay[day] || 0) + 1;
     byHour[hour] = (byHour[hour] || 0) + 1;
-    byWeekday[wd] = (byWeekday[wd] || 0) + 1;
+    byWeekday[weekday] = (byWeekday[weekday] || 0) + 1;
     byMonth[month] = (byMonth[month] || 0) + 1;
 
     if (d.subtitles && d.subtitles[0]) {
